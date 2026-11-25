@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Business Books</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#222;--mu:#777;--ac:#2f6f5e;--bd:#e4e0d6;--rd:#b23a3a}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--card:#222;--tx:#eee;--mu:#999;--ac:#4fb394;--bd:#333;--rd:#e06b6b}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+nav{background:var(--card);border-bottom:1px solid var(--bd);display:flex;overflow-x:auto;position:sticky;top:0;z-index:5}
+nav b{padding:12px 14px;white-space:nowrap}nav a{padding:12px 12px;white-space:nowrap;color:var(--tx);text-decoration:none}
+nav a.on{color:var(--ac);border-bottom:3px solid var(--ac);font-weight:600}
+main{padding:14px;max-width:1100px;margin:auto}
+@media(min-width:900px){body{display:flex}nav{flex-direction:column;width:210px;height:100vh;border:0;border-right:1px solid var(--bd);overflow:auto}nav a.on{border:0;border-left:3px solid var(--ac)}main{flex:1}}
+h2{margin:6px 0 12px}.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.k{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px}.k small{color:var(--mu);display:block}.k b{font-size:18px}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end}
+label{font-size:12px;color:var(--mu);display:block}input,select,button{width:100%;padding:9px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--tx);font:inherit}
+button{background:var(--ac);color:#fff;border:0;cursor:pointer;width:auto;padding:9px 16px}button.s{padding:4px 9px;font-size:12px;margin:1px}button.d{background:var(--rd)}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{padding:7px 8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}th{font-size:12px;color:var(--mu)}
+.ch{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}.ch .card{height:300px}
+.warn{background:#fff3cd;color:#664d03;padding:8px;border-radius:7px;margin-bottom:10px;font-size:13px}
+@media print{nav,form,button{display:none}body{display:block;background:#fff}}
+</style></head><body>
+<nav id="nav"></nav><main id="m"></main>
+<script>
+// ===== SETTINGS =====
+const BIZ='The Dress Den',SB_URL='https://qiskauymkcflvayjippc.supabase.co',SB_KEY='sb_publishable_hbtF63xmCSkxRiZOobFglg_8DMNbGTN';   // paste Supabase URL + anon key here
+const P=['Namal','Lahiru'],SPLIT={Namal:.0,Lahiru:.0};   // profit share
+const PAY=['Business cash','Business bank',...P],ACC=['Cash in hand','Bank'];
+const F=(k,t,l,o)=>({k,t,l:l||k[0].toUpperCase()+k.slice(1).replace(/_/g,' '),o});
+const D=F('date','date'),AM=F('amount','number'),PB=F('paid_by','select','Paid by',PAY),ON=F('order_no','text','Order no.');
+const K={
+sale:{n:'Sales & Orders',f:[D,ON,F('customer','text'),F('items','text','Items / details'),AM,F('status','select','Payment',['Paid','Credit']),F('account','select','Money received in (if paid)',ACC)]},
+expense:{n:'Expenses',f:[D,F('category','select','Category',['Stock purchase','Packaging','Delivery','Rent','Salary','Utilities','Subscription','Other']),F('description','text'),AM,PB]},
+ad:{n:'Advertisements',f:[D,F('platform','select','Platform',['Facebook','Instagram','TikTok','Google','Other']),F('description','text','Campaign'),AM,PB]},
+ret:{n:'Returns',f:[D,ON,F('reason','text'),F('amount','number','Refund amount'),F('account','select','Refunded from',[...ACC,'Reduce unpaid balance'])]},
+sub:{n:'Subscriptions',f:[F('name','text'),AM,F('cycle','select','Billing cycle',['Monthly','Yearly']),PB,F('next_due','date','Next due')]},
+asset:{n:'Assets',f:[D,F('name','text','Asset'),F('amount','number','Value'),PB]},
+liab:{n:'Liabilities',f:[D,F('name','text','Liability / lender'),AM,F('account','select','Received in',[...ACC,'None'])]},
+equity:{n:'Equity',f:[D,F('partner','select','Partner',P),F('type','select','Type',['Invest','Withdraw']),AM,F('account','select','Account',ACC)]},
+transfer:{n:'Cash ⇄ Bank',f:[D,F('dir','select','Direction',['Cash in hand → Bank','Bank → Cash in hand']),AM,F('note','text')]},
+liabpay:{n:'Liability payments',f:[]},salepay:{n:'Customer payments',f:[]}};
+// ===== DATA =====
+const sb=SB_URL&&window.supabase?supabase.createClient(SB_URL,SB_KEY):null;let E=[];
+const today=()=>new Date().toISOString().slice(0,10),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const R=n=>'Rs '+(+n||0).toLocaleString('en-LK',{maximumFractionDigits:2});
+const srt=()=>E.sort((x,y)=>y.date.localeCompare(x.date)||String(y.id).localeCompare(String(x.id)));
+async function load(){if(sb){const{data,error}=await sb.from('entries').select('*').order('date',{ascending:false});if(error)alert(error.message);else E=data}else E=JSON.parse(localStorage.getItem('books')||'[]');srt()}
+const save=()=>localStorage.setItem('books',JSON.stringify(E));
+async function add(kind,data){data.date=data.date||today();if(sb){const{error}=await sb.from('entries').insert({kind,date:data.date,data});if(error)return alert(error.message)}else{E.push({id:Date.now()+Math.random(),kind,date:data.date,data});save()}await load()}
+async function del(id){if(!confirm('Delete this record (and its linked payments)?'))return;const ids=[id,...E.filter(x=>['salepay','liabpay'].includes(x.kind)&&String(x.data.sale??x.data.liab)===String(id)).map(x=>x.id)].map(String);if(sb){const{error}=await sb.from('entries').delete().in('id',ids);if(error)return alert(error.message)}else{E=E.filter(e=>!ids.includes(String(e.id)));save()}await load();route()}
+// ===== ACCOUNTING =====
+const a=v=>v==='Bank'?'bank':'cash';
+function fx(e){const d=e.data,m=+d.amount||0,r={cash:0,bank:0,eq:{Namal:0,Lahiru:0},sales:0,ret:0,exp:0,ad:0,asset:0,liab:0,recv:0};
+const src=s=>{if(s==='Business cash')r.cash-=m;else if(s==='Business bank')r.bank-=m;else if(s in r.eq)r.eq[s]+=m};
+switch(e.kind){
+case'sale':r.sales=m;if(d.status==='Credit')r.recv=m;else r[a(d.account)]+=m;break;
+case'ret':r.ret=m;if(d.account==='Reduce unpaid balance')r.recv=-m;else r[a(d.account)]-=m;break;
+case'expense':src(d.paid_by);r.exp=m;break;
+case'ad':src(d.paid_by);r.ad=m;break;
+case'asset':src(d.paid_by);r.asset=m;break;
+case'liab':if(d.account!=='None')r[a(d.account)]+=m;r.liab=m;break;
+case'liabpay':r[a(d.account)]-=m;r.liab=-m;break;
+case'salepay':r[a(d.account)]+=m;r.recv=-m;break;
+case'equity':{const s=d.type==='Invest'?1:-1;r[a(d.account)]+=s*m;r.eq[d.partner]+=s*m}break;
+case'transfer':{const s=d.dir.startsWith('Cash')?1:-1;r.cash-=s*m;r.bank+=s*m}}
+return r}
+function tot(list){const t={cash:0,bank:0,sales:0,ret:0,exp:0,ad:0,asset:0,liab:0,recv:0,eq:{Namal:0,Lahiru:0}};
+list.forEach(e=>{const r=fx(e);['cash','bank','sales','ret','exp','ad','asset','liab','recv'].forEach(k=>t[k]+=r[k]);P.forEach(p=>t.eq[p]+=r.eq[p])});
+t.profit=t.sales-t.ret-t.exp-t.ad;t.equity={};P.forEach(p=>t.equity[p]=t.eq[p]+SPLIT[p]*t.profit);return t}
+// ===== UI =====
+const nav=document.getElementById('nav'),m=document.getElementById('m');
+const pages=[['dash','Dashboard'],...Object.keys(K).filter(k=>!['liabpay','salepay'].includes(k)).map(k=>[k,K[k].n]),['rep','Reports']];
+function route(){const h=(location.hash||'#dash').slice(1);
+nav.innerHTML='<b>📒 '+esc(BIZ)+'</b>'+pages.map(p=>`<a href="#${p[0]}" class="${p[0]===h?'on':''}">${p[1]}</a>`).join('');
+(Chart.getChart?[...document.querySelectorAll('canvas')].forEach(c=>Chart.getChart(c)?.destroy()):0);
+m.innerHTML=(sb?'':'<div class="warn">Demo mode: data is saved only in this browser. Add your Supabase URL and key in the file to use the shared free database.</div>')+(h==='dash'?dash():h==='rep'?rep():view(h));
+if(h==='dash')charts();if(h==='rep')repEv();else if(K[h])formEv(h)}
+function inp(f,d){const c=(d||{})[f.k],v=c!==undefined?c:(f.t==='date'?today():'');
+return`<div><label>${f.l}</label>`+(f.t==='select'?`<select name="${f.k}">${f.o.map(o=>`<option${o===v?' selected':''}>${o}</option>`).join('')}</select>`:`<input name="${f.k}" type="${f.t}" value="${esc(v)}"${f.t==='number'?' step="0.01" min="0" required':''}${f.k==='customer'||f.k==='name'?' required':''}>`)+'</div>'}
+let EDIT=null;
+function edit(id){EDIT=id;route();scrollTo(0,0)}
+async function upd(id,d){const o=E.find(e=>String(e.id)===String(id));if(!o)return true;
+if(o.kind==='sale'&&d.status!=='Credit'&&E.some(x=>x.kind==='salepay'&&String(x.data.sale)===String(id)))return alert('This order already has customer payments. Keep it as Credit, or delete the order and re-add it.');
+const data={...o.data,...d};data.date=data.date||today();
+if(sb){const{error}=await sb.from('entries').update({date:data.date,data}).eq('id',id);if(error)return alert(error.message)}else{o.data=data;o.date=data.date;save()}
+await load();return true}
+function view(k){const c=K[k];if(!c)return'';const rows=E.filter(e=>e.kind===k);const isL=k==='liab',isS=k==='sub',isSa=k==='sale',ed=EDIT?E.find(e=>String(e.id)===String(EDIT)&&e.kind===k)?.data:null;
+let h=`<h2>${c.n}</h2><form id="f" class="card">${c.f.map(f=>inp(f,ed)).join('')}<button>${ed?'Update':'Add'}</button>${ed?'<button type="button" class="s d" onclick="EDIT=null;route()">Cancel</button>':''}</form>`;
+if(k==='transfer'||k==='sale'||k==='equity'){const t=tot(E);h+=`<div class="grid"><div class="k"><small>Cash in hand</small><b>${R(t.cash)}</b></div><div class="k"><small>Bank</small><b>${R(t.bank)}</b></div><div class="k"><small>Unpaid orders</small><b>${R(t.recv)}</b></div></div>`}
+h+=`<div class="card tw"><table><tr>${c.f.map(f=>`<th>${f.l}</th>`).join('')}${isL?'<th>Outstanding</th>':''}${isSa?'<th>Balance due</th>':''}<th></th></tr>`;
+h+=rows.map(e=>{const d=e.data;const out=isL?d.amount-E.filter(x=>x.kind==='liabpay'&&String(x.data.liab)===String(e.id)).reduce((s,x)=>s+ +x.data.amount,0):0;
+return`<tr>${c.f.map(f=>`<td>${f.t==='number'?R(d[f.k]):esc(d[f.k])}</td>`).join('')}${isL?`<td>${R(out)}</td>`:''}${isSa?`<td>${R(dueOf(e))}</td>`:''}<td>${isSa&&dueOf(e)>0?`<button class="s" onclick="receive('${e.id}')">Receive</button>`:''}${isL?`<button class="s" onclick="repay('${e.id}')">Repay</button>`:''}${isS?`<button class="s" onclick="paysub('${e.id}')">Pay now</button>`:''}<button class="s" onclick="edit('${e.id}')">Edit</button><button class="s d" onclick="del('${e.id}')">✕</button></td></tr>`}).join('')||'<tr><td>No records yet</td></tr>';
+return h+'</table></div>'}
+function formEv(k){const f=document.getElementById('f');if(!f)return;f.onsubmit=async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(f));
+if(EDIT){if(await upd(EDIT,d))EDIT=null}else await add(k,d);route()}}
+const dueOf=e=>{if(e.data.status!=='Credit')return 0;const n=e.data.order_no;return e.data.amount-E.filter(x=>x.kind==='salepay'&&String(x.data.sale)===String(e.id)).reduce((s,x)=>s+ +x.data.amount,0)-(n?E.filter(x=>x.kind==='ret'&&x.data.account==='Reduce unpaid balance'&&x.data.order_no===n).reduce((s,x)=>s+ +x.data.amount,0):0)};
+async function receive(id){const e=E.find(x=>String(x.id)===String(id)),due=dueOf(e),x=+prompt('Amount received from '+e.data.customer+' (due '+due+')',due);if(!x)return;const ac=confirm('OK = received in Cash in hand\nCancel = received in Bank')?'Cash in hand':'Bank';await add('salepay',{sale:id,customer:e.data.customer,order_no:e.data.order_no,amount:x,account:ac});route()}
+async function repay(id){const x=+prompt('Repay amount');if(!x)return;const ac=confirm('OK = pay from Cash in hand\nCancel = pay from Bank')?'Cash in hand':'Bank';await add('liabpay',{liab:id,amount:x,account:ac});route()}
+async function paysub(id){const e=E.find(x=>String(x.id)===String(id)).data;if(!confirm(`Record ${R(e.amount)} payment for ${e.name}?`))return;await add('expense',{category:'Subscription',description:e.name,amount:e.amount,paid_by:e.paid_by==='Business cash'||e.paid_by==='Business bank'||P.includes(e.paid_by)?e.paid_by:'Business bank'});alert('Recorded as an expense')}
+function dash(){const t=tot(E);const k=(l,v)=>`<div class="k"><small>${l}</small><b>${R(v)}</b></div>`;
+return`<h2>Dashboard</h2><div class="grid">${k('Cash in hand',t.cash)}${k('Bank balance',t.bank)}${k('Total money',t.cash+t.bank)}${k('Unpaid orders (receivable)',t.recv)}${k('Sales',t.sales)}${k('Returns',t.ret)}${k('Expenses',t.exp)}${k('Advertising',t.ad)}${k('Net profit',t.profit)}${k('Fixed assets',t.asset)}${k('Liabilities',t.liab)}${P.map(p=>k('Equity – '+p,t.equity[p])).join('')}</div>
+<div class="ch"><div class="card"><canvas id="c1"></canvas></div><div class="card"><canvas id="c2"></canvas></div><div class="card"><canvas id="c3"></canvas></div></div>`}
+function charts(){const ms=[];for(let i=5;i>=0;i--){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);ms.push(d.toISOString().slice(0,7))}
+const by=f=>ms.map(x=>E.filter(e=>e.date.startsWith(x)).reduce((s,e)=>s+f(fx(e)),0));
+new Chart(c1,{type:'bar',data:{labels:ms,datasets:[{label:'Sales',data:by(r=>r.sales-r.ret),backgroundColor:'#2f6f5e'},{label:'Expenses + Ads',data:by(r=>r.exp+r.ad),backgroundColor:'#c9884a'}]},options:{maintainAspectRatio:false,plugins:{title:{display:true,text:'Last 6 months'}}}});
+const cat={};E.filter(e=>e.kind==='expense').forEach(e=>cat[e.data.category]=(cat[e.data.category]||0)+ +e.data.amount);const ad=E.filter(e=>e.kind==='ad').reduce((s,e)=>s+ +e.data.amount,0);if(ad)cat.Advertising=ad;
+new Chart(c2,{type:'doughnut',data:{labels:Object.keys(cat),datasets:[{data:Object.values(cat)}]},options:{maintainAspectRatio:false,plugins:{title:{display:true,text:'Spending by category'}}}});
+const t=tot(E);new Chart(c3,{type:'doughnut',data:{labels:['Cash in hand','Bank'],datasets:[{data:[Math.max(t.cash,0),Math.max(t.bank,0)],backgroundColor:['#c9884a','#2f6f5e']}]},options:{maintainAspectRatio:false,plugins:{title:{display:true,text:'Where the money is'}}}})}
+// ===== REPORTS =====
+let RF={from:today().slice(0,8)+'01',to:today(),kind:'all'};
+const rrows=()=>E.filter(e=>e.date>=RF.from&&e.date<=RF.to&&(RF.kind==='all'||e.kind===RF.kind)).map(e=>({date:e.date,type:K[e.kind].n,details:Object.entries(e.data).filter(([k])=>!['date','amount'].includes(k)).map(([k,v])=>v).join(' | '),amount:+e.data.amount||0}));
+function rep(){const l=E.filter(e=>e.date>=RF.from&&e.date<=RF.to),t=tot(l),rows=rrows();
+return`<h2>Reports</h2><form id="rf" class="card"><div><label>From</label><input type="date" name="from" value="${RF.from}"></div><div><label>To</label><input type="date" name="to" value="${RF.to}"></div><div><label>Type</label><select name="kind"><option value="all">All</option>${Object.keys(K).map(k=>`<option value="${k}"${RF.kind===k?' selected':''}>${K[k].n}</option>`).join('')}</select></div><button type="button" id="csv">Download CSV</button><button type="button" id="pr">Print / Save PDF</button></form>
+<div class="grid"><div class="k"><small>Sales</small><b>${R(t.sales)}</b></div><div class="k"><small>Returns</small><b>${R(t.ret)}</b></div><div class="k"><small>Expenses + Ads</small><b>${R(t.exp+t.ad)}</b></div><div class="k"><small>Net profit</small><b>${R(t.profit)}</b></div></div>
+<div class="card tw"><table><tr><th>Date</th><th>Type</th><th>Details</th><th>Amount</th></tr>${rows.map(r=>`<tr><td>${r.date}</td><td>${r.type}</td><td>${esc(r.details)}</td><td>${R(r.amount)}</td></tr>`).join('')||'<tr><td>No records</td></tr>'}</table></div>`}
+function repEv(){const f=document.getElementById('rf');f.onchange=()=>{RF=Object.fromEntries(new FormData(f));route()};
+csv.onclick=()=>{const q=s=>'"'+String(s).replace(/"/g,'""')+'"';const t='Date,Type,Details,Amount\n'+rrows().map(r=>[r.date,r.type,r.details,r.amount].map(q).join(',')).join('\n');
+const x=document.createElement('a');x.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));x.download=`report_${RF.from}_${RF.to}.csv`;x.click()};pr.onclick=()=>print()}
+addEventListener('hashchange',()=>{EDIT=null;route()});load().then(route);
+</script></body></html>
